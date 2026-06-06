@@ -41,11 +41,14 @@ agent fires after the user picks.
 ## OPTION QUALITY
 Each option must:
 - Tie to a specific phase (or be "free choice" / "describe what you want")
-- Reference the user's actual state (e.g., "you've drained 47 learn resources, \
-finish the remaining HackTricks postMessage subpages")
+- Reference the user's ACTUAL state from the context block (phase counts,
+  recent feedback, user notes) — never invent numbers or facts
 - Be ambitious — never propose trivial single-resource tasks
-- Cite past mastery when relevant (e.g., "you mastered DOM XSS — skip JS \
-sources/sinks basics")
+- Cite mastered bug classes from the MASTERED BUG CLASSES section IF it
+  appears in the context block. If that section is absent or empty, the
+  user has not mastered any other bug class — do NOT invent one. NEVER
+  reference DOM XSS, CORS, SSRF, or any other class as "mastered" unless
+  it appears verbatim in the MASTERED BUG CLASSES section.
 
 ## MASTERY LOOP (HARD)
 The user follows a strict 4-phase loop with mastery gates:
@@ -121,10 +124,17 @@ def _build_context(
 
     sections.append("## PHASE PROGRESS\n" + "\n".join(_phase_progress_lines(progress)))
 
+    # Always emit the MASTERED section, even when empty — gives the model an
+    # explicit anchor so it cannot hallucinate prior mastery.
     if mastered:
         mastered_names = ", ".join(m["name"] for m in mastered)
         sections.append(
             f"## MASTERED BUG CLASSES (cross-reference for context)\n{mastered_names}"
+        )
+    else:
+        sections.append(
+            "## MASTERED BUG CLASSES (cross-reference for context)\n"
+            "(none — user has not marked any bug class as mastered yet)"
         )
 
     if user_notes:
