@@ -1,0 +1,353 @@
+# Guide Agent — configuration example
+# Copy to config.yaml and customize. config.yaml is gitignored.
+
+about_me: "AboutMe.md"
+
+# LLM models per stage
+llm:
+  conversation_model: "claude-haiku-4-5"   # Cheap propose/iterate loop
+  planner_model: "claude-sonnet-4-6"        # Daily plan generation per phase
+  research_model: "claude-opus-4-8"         # Research phase (gap analysis etc.)
+  max_tokens: 16384
+
+# Email — outbound briefing
+email:
+  enabled: true
+  from_address: "guide@yourdomain.com"
+  to_addresses:
+    - "you@gmail.com"
+
+# IMAP — inbound reply polling
+imap:
+  enabled: true
+  server: "imap.gmail.com"
+  port: 993
+  mailbox: "INBOX"
+
+# Newsletter Agent integration (read-only)
+newsletter:
+  enabled: true
+  project_dir: "~/Desktop/personal/newsletter-agent"
+
+# Web search providers
+search:
+  enabled: true
+  max_results: 5
+  brave:
+    enabled: true
+    api_key_env: "BRAVE_API_KEY"
+  tavily:
+    enabled: true
+    api_key_env: "TAVILY_API_KEY"
+  exa:
+    enabled: true
+    api_key_env: "EXA_API_KEY"
+
+# Hardcoded source pool per phase
+# Agent filters these pools to extract only material related to the active
+# bug class. Edit freely — add/remove sources, the agent will respect what's
+# here. execute and research phases use discovery-only (no hardcoded pool).
+sources:
+  learn:
+    # General web / cross-domain knowledge bases
+    - name: "HackTricks"
+      base_url: "https://hacktricks.wiki/en/index.html"
+    - name: "PortSwigger Web Security Academy"
+      base_url: "https://portswigger.net/web-security/all-topics"
+    - name: "0xn3va Cheat Sheets"
+      base_url: "https://0xn3va.gitbook.io/cheat-sheets"
+    - name: "PayloadsAllTheThings"
+      base_url: "https://github.com/swisskyrepo/PayloadsAllTheThings/tree/master"
+    - name: "KathanP19 HowToHunt"
+      base_url: "https://kathan19.gitbook.io/howtohunt"
+    - name: "MDN Web Docs"
+      base_url: "https://developer.mozilla.org/en-US/"
+    - name: "OWASP Cheat Sheet Series"
+      base_url: "https://cheatsheetseries.owasp.org/"
+    - name: "OWASP Web Security Testing Guide"
+      base_url: "https://owasp.org/www-project-web-security-testing-guide/"
+    - name: "Snyk Learn"
+      base_url: "https://learn.snyk.io/"
+    - name: "OWASP API Security Project"
+      base_url: "https://owasp.org/www-project-api-security/"
+    - name: "Intigriti Hackademy"
+      base_url: "https://www.intigriti.com/researchers/hackademy"
+    - name: "CTF101 (NYU OSIRIS)"
+      base_url: "https://ctf101.org/"
+    # AI / LLM
+    - name: "OWASP GenAI Security Project"
+      base_url: "https://genai.owasp.org/"
+    - name: "awesome-llm-security"
+      base_url: "https://github.com/corca-ai/awesome-llm-security"
+    # Mobile
+    - name: "OWASP MASTG (Mobile App Security Testing Guide)"
+      base_url: "https://mas.owasp.org/MASTG/"
+    - name: "awesome-ios-security"
+      base_url: "https://github.com/Cy-clon3/awesome-ios-security"
+    # Cloud
+    - name: "HackTricks Cloud"
+      base_url: "https://cloud.hacktricks.wiki/en/index.html"
+    - name: "Hacking the Cloud"
+      base_url: "https://hackingthe.cloud/"
+    - name: "Awesome-CloudSec-Labs"
+      base_url: "https://github.com/iknowjason/Awesome-CloudSec-Labs"
+    # Network / AD
+    - name: "The Hacker Recipes"
+      base_url: "https://www.thehacker.recipes/"
+    - name: "ired.team Red Team Notes"
+      base_url: "https://www.ired.team/"
+    # Binary exploitation / reverse engineering
+    - name: "Nightmare (guyinatuxedo)"
+      base_url: "https://guyinatuxedo.github.io/"
+    - name: "Hoppers Roppers Pwning Roadmap"
+      base_url: "https://www.hoppersroppers.org/roadmap/training/pwning.html"
+    - name: "CTF Field Guide (Trail of Bits)"
+      base_url: "https://trailofbits.github.io/ctf/"
+    # Crypto
+    - name: "Stanford Cryptography I (Dan Boneh)"
+      base_url: "https://www.coursera.org/learn/crypto"
+    - name: "Crypto 101"
+      base_url: "https://www.crypto101.io/"
+    # Smart contract / Web3
+    - name: "Cyfrin Updraft Smart Contract Security"
+      base_url: "https://updraft.cyfrin.io/courses/security"
+    - name: "Trail of Bits Building Secure Contracts"
+      base_url: "https://secure-contracts.com/"
+    - name: "Secureum Mind Map"
+      base_url: "https://github.com/x676f64/secureum-mind_map"
+    - name: "RareSkills Smart Contract Security"
+      base_url: "https://rareskills.io/post/smart-contract-security"
+  examples:
+    - name: "HackerOne Hacktivity"
+      base_url: "https://hackerone.com/hacktivity"
+    - name: "GitHub Security Advisories"
+      base_url: "https://github.com/advisories"
+    - name: "Pentester Land Bug Bounty Writeups"
+      base_url: "https://pentester.land/list-of-bug-bounty-writeups.html"
+    # Curated archives / indexes of real disclosed reports
+    - name: "reddelexc HackerOne Reports Archive"
+      base_url: "https://github.com/reddelexc/hackerone-reports/tree/master"
+    - name: "BugBountyHunting Search Engine"
+      base_url: "https://www.bugbountyhunting.com/"
+    - name: "BugBoard (rsecloud)"
+      base_url: "https://bugboard.rsecloud.com/"
+    # Original-research blogs — every post is a real-world finding
+    - name: "Orange Tsai's Blog"
+      base_url: "https://blog.orange.tw/"
+    - name: "Embrace The Red (wunderwuzzi)"
+      base_url: "https://embracethered.com/blog/"
+    - name: "Google Project Zero"
+      base_url: "https://googleprojectzero.blogspot.com/"
+    - name: "Sonar Research Blog"
+      base_url: "https://www.sonarsource.com/blog/"
+    - name: "PentesterLab Blog"
+      base_url: "https://pentesterlab.com/blog/"
+    - name: "PortSwigger Research"
+      base_url: "https://portswigger.net/research/"
+    # General publishing platform — broad but very high-volume of writeups
+    - name: "Medium"
+      base_url: "https://medium.com/"
+    # CTF writeup archive
+    - name: "CTFsearch (HackMap CTF writeup index)"
+      base_url: "https://ctfsearch.hackmap.win/"
+  practice:
+    # === Web app security ===
+    - name: "PortSwigger Web Security Academy Labs"
+      base_url: "https://portswigger.net/web-security/all-labs"
+    - name: "PentesterLab Tracks"
+      base_url: "https://pentesterlab.com/tracks"
+    - name: "OWASP Juice Shop"
+      base_url: "https://github.com/juice-shop/juice-shop"
+    - name: "Hacker101 CTF"
+      base_url: "https://ctf.hacker101.com/"
+    - name: "Google XSS Game"
+      base_url: "https://xss-game.appspot.com/"
+    - name: "Root-Me"
+      base_url: "https://www.root-me.org/"
+    - name: "HackThisSite"
+      base_url: "https://www.hackthissite.org/"
+    - name: "CTFlearn"
+      base_url: "https://ctflearn.com/"
+    # === API security ===
+    - name: "Damn Vulnerable GraphQL Application (DVGA)"
+      base_url: "https://github.com/dolevf/Damn-Vulnerable-GraphQL-Application"
+    - name: "OWASP crAPI"
+      base_url: "https://github.com/OWASP/crAPI"
+    - name: "VAmPI Vulnerable REST API"
+      base_url: "https://github.com/erev0s/VAmPI"
+    - name: "vAPI Vulnerable API"
+      base_url: "https://github.com/roottusk/vapi"
+    # === AI / LLM security ===
+    - name: "Gandalf (Lakera)"
+      base_url: "https://gandalf.lakera.ai/"
+    - name: "Prompt Airlines (Wiz)"
+      base_url: "https://promptairlines.com/"
+    - name: "Doublespeak.chat"
+      base_url: "https://doublespeak.chat/"
+    - name: "AI Goat"
+      base_url: "https://github.com/dhammon/ai-goat"
+    - name: "Spy Logic CTF (UC Berkeley)"
+      base_url: "https://ctf.spylab.ai/"
+    - name: "TryHackMe AI Upskilling Path"
+      base_url: "https://tryhackme.com/hacktivities?tab=ai-upskilling"
+    # === Smart contract / Web3 ===
+    - name: "The Ethernaut (OpenZeppelin)"
+      base_url: "https://ethernaut.openzeppelin.com/"
+    - name: "Damn Vulnerable DeFi"
+      base_url: "https://www.damnvulnerabledefi.xyz/"
+    - name: "Capture the Ether"
+      base_url: "https://capturetheether.com/"
+    - name: "QuillCTF"
+      base_url: "https://quillctf.super.site/"
+    # === Cloud security (AWS / GCP / Azure / Kubernetes) ===
+    - name: "EKS Cluster Games (Wiz)"
+      base_url: "https://eksclustergames.com/"
+    - name: "The Big IAM Challenge (Wiz)"
+      base_url: "https://thebigiamchallenge.com/"
+    - name: "K8s LAN Party (Wiz)"
+      base_url: "https://k8slanparty.com/"
+    - name: "flAWS (and flAWS2)"
+      base_url: "http://flaws.cloud/"
+    - name: "CloudGoat (Rhino Security)"
+      base_url: "https://github.com/RhinoSecurityLabs/cloudgoat"
+    - name: "IAM Vulnerable (Bishop Fox)"
+      base_url: "https://github.com/BishopFox/iam-vulnerable"
+    - name: "AWSGoat (INE Labs)"
+      base_url: "https://github.com/ine-labs/AWSGoat"
+    - name: "AzureGoat (INE Labs)"
+      base_url: "https://github.com/ine-labs/AzureGoat"
+    - name: "GCP Goat"
+      base_url: "https://gcpgoat.joshuajebaraj.com/"
+    - name: "Thunder CTF (GCP)"
+      base_url: "https://thunder-ctf.cloud/"
+    - name: "Kubernetes Goat"
+      base_url: "https://madhuakula.github.io/kubernetes-goat/"
+    - name: "OWASP EKS Goat"
+      base_url: "https://eksgoat.peachycloudsecurity.com/"
+    # === Binary exploitation / reverse engineering ===
+    - name: "pwn.college"
+      base_url: "https://pwn.college/"
+    - name: "pwnable.tw"
+      base_url: "https://pwnable.tw/"
+    - name: "pwnable.kr"
+      base_url: "https://pwnable.kr/"
+    - name: "Exploit Education (Phoenix / Nebula / Protostar)"
+      base_url: "https://exploit.education/"
+    - name: "ROP Emporium"
+      base_url: "https://ropemporium.com/"
+    - name: "Crackmes.one"
+      base_url: "https://crackmes.one/"
+    - name: "Reversing.kr"
+      base_url: "http://reversing.kr/"
+    - name: "Challenges.re (Yurichev)"
+      base_url: "https://challenges.re/"
+    # === Cryptography ===
+    - name: "Cryptopals Crypto Challenges"
+      base_url: "https://cryptopals.com/"
+    - name: "CryptoHack"
+      base_url: "https://cryptohack.org/"
+    # === Mobile (Android + iOS) ===
+    - name: "OWASP MASTG Crackmes"
+      base_url: "https://mas.owasp.org/crackmes/"
+    - name: "DIVA Android"
+      base_url: "https://github.com/payatu/diva-android"
+    - name: "InsecureBankv2"
+      base_url: "https://github.com/dineshshetty/Android-InsecureBankv2"
+    - name: "InjuredAndroid"
+      base_url: "https://github.com/B3nac/InjuredAndroid"
+    - name: "Allsafe (modern Android)"
+      base_url: "https://github.com/t0thkr1s/allsafe"
+    - name: "OWASP iGoat-Swift (iOS)"
+      base_url: "https://github.com/OWASP/iGoat-Swift"
+    - name: "DVIA-v2 (Damn Vulnerable iOS App)"
+      base_url: "https://github.com/prateek147/DVIA-v2"
+    - name: "Hextree.io"
+      base_url: "https://www.hextree.io/"
+    # === Active Directory / Windows / Network ===
+    - name: "GOAD (Game of Active Directory)"
+      base_url: "https://orange-cyberdefense.github.io/GOAD/"
+    - name: "VulnLab"
+      base_url: "https://www.vulnlab.com/"
+    - name: "VulnHub"
+      base_url: "https://www.vulnhub.com/"
+    - name: "HackMyVM"
+      base_url: "https://hackmyvm.eu/"
+    - name: "OverTheWire Wargames"
+      base_url: "https://overthewire.org/wargames/"
+    - name: "Underthewire (Windows/PowerShell)"
+      base_url: "https://underthewire.tech/"
+    - name: "SmashTheStack Wargame Network"
+      base_url: "http://www.smashthestack.org/wargames"
+    # === HackTheBox + TryHackMe (general, multi-domain) ===
+    - name: "HackTheBox Hacking Labs"
+      base_url: "https://www.hackthebox.com/hacker/hacking-labs"
+    - name: "HackTheBox Academy Catalogue (modules)"
+      base_url: "https://academy.hackthebox.com/catalogue"
+    - name: "TryHackMe Challenges"
+      base_url: "https://tryhackme.com/challenges"
+    # === DevSecOps / IaC ===
+    - name: "TerraGoat (Bridgecrew)"
+      base_url: "https://github.com/bridgecrewio/terragoat"
+    - name: "CfnGoat (Bridgecrew)"
+      base_url: "https://github.com/bridgecrewio/cfngoat"
+    - name: "CdkGoat (Bridgecrew)"
+      base_url: "https://github.com/bridgecrewio/cdkgoat"
+    # === Code review ===
+    - name: "Code Review Lab"
+      base_url: "https://www.codereviewlab.com/"
+  execute:
+    # === Bug bounty platforms (program directories) ===
+    # The agent uses these to discover live programs accepting reports for
+    # the active bug class. Search-scoped to find SPECIFIC program pages,
+    # not just the platform homepage.
+    - name: "HackerOne Programs Directory"
+      base_url: "https://hackerone.com/directory/programs"
+    - name: "HackerOne Hacktivity"
+      base_url: "https://hackerone.com/hacktivity"
+    - name: "Bugcrowd Programs"
+      base_url: "https://www.bugcrowd.com/programs/"
+    - name: "Intigriti Programs"
+      base_url: "https://www.intigriti.com/programs"
+    - name: "YesWeHack Programs"
+      base_url: "https://yeswehack.com/programs"
+    # === CTF event hubs (time-sensitive competition discovery) ===
+    - name: "HackTheBox Live CTFs"
+      base_url: "https://ctf.hackthebox.com/events/live"
+    - name: "HackTheBox Upcoming CTFs"
+      base_url: "https://ctf.hackthebox.com/events/upcoming"
+    - name: "HackTheBox Past CTFs"
+      base_url: "https://ctf.hackthebox.com/events/past"
+    # NOTE: Most execute opportunities come from intelligent web search —
+    # open-source repos with attack surface, language/framework-specific
+    # bounty programs, hackathons, security competitions, recently-launched
+    # programs not yet on the major platforms. The execute SKILL.md handles
+    # that discovery; the entries above are durable starting points.
+  # research: discovery-only — arxiv, Google Scholar, conference proceedings,
+  # vendor advisories, researcher blogs. Nothing hardcoded by design.
+
+  # Optional deep-URL hints per (phase, bug_class).
+  # The agent visits these directly via verify_url AND runs base-URL-scoped
+  # web_search, then deduplicates by URL. Add entries as you discover the
+  # canonical deep pages for each (source, bug_class) pair.
+  #
+  # Shape:
+  #   deep_urls:
+  #     <phase>:
+  #       <bug-class-lowercase>:
+  #         - "https://..."
+  #         - "https://..."
+  #
+  # Example (populate over time — empty by default):
+  deep_urls: {}
+  # Real example shape — uncomment + edit when you start drilling postMessage:
+  #   learn:
+  #     postmessage:
+  #       - "https://book.hacktricks.wiki/en/pentesting-web/postmessage-vulnerabilities/index.html"
+  #       - "https://portswigger.net/web-security/dom-based/web-message-manipulation"
+  #       - "https://cheatsheetseries.owasp.org/cheatsheets/DOM_based_XSS_Prevention_Cheat_Sheet.html"
+  #   examples:
+  #     postmessage:
+  #       - "https://hackerone.com/reports/231053"
+  #   practice:
+  #     postmessage:
+  #       - "https://portswigger.net/web-security/dom-based/web-message-manipulation/lab-dom-xss-using-web-messages"
