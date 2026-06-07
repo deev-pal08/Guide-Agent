@@ -56,12 +56,13 @@ NEVER use queries like `"<bug-class> CTF writeup"` or `"<bug-class> exploit expl
 
 ## Tool loop
 
-1. **`search_consumed_resources`** — drop already-done labs.
-2. **`web_search`** (3-5 queries in one turn) using ONLY practice-oriented queries (see above).
-3. **`verify_url`** in ONE turn — labs frequently get URL changes or get deprecated; verify before assigning.
-4. **For each candidate URL: apply the litmus test.** If the page is a writeup / blog / explanation, DROP IT. Find a replacement.
-5. **(optional)** `read_skill_reference("practice", "REFERENCES.md")` for batching methodology + writeup-detection patterns.
-6. **Final turn** — emit Plan JSON.
+1. **`prefetched_resource_search(bug_class, bug_class_id)` — ALWAYS FIRST.** The CLI fan-out tags the DB with practice-phase resources from `ctfsearch` (CTF walkthroughs as pseudo-labs), `codereviewlab` (205 source-review challenges, all 20 XSS / 10 SSRF / 6 JWT etc.), `sitemap:PortSwigger Web Security Academy Labs`, `sitemap:PentesterLab Exercises`, `sitemap:Hacker101 Sessions + Videos`, `sitemap:OWASP Juice Shop Pwning Guide`, plus `web_search` with platform-targeted queries (`site:tryhackme.com/room <bc>`, `site:hackthebox.com <bc>`, `site:play.picoctf.org/practice/challenge <bc>`, etc.) and github vulnerable-app `.md` docs. Query the DB first.
+2. **`search_consumed_resources`** — drop already-done labs.
+3. **Live fallback (ONLY if DB sparse OR FRESH_FETCH=true)** — batch in one turn: `ctfsearch_search` + `codereviewlab_search` + `sitemap_search` for each configured lab platform + `web_search` with practice-oriented queries (`{bc} lab challenge`, `vulnerable application {bc}`, `{bc} hands-on exercise`).
+4. **`verify_url`** in ONE turn — lab URLs change/deprecate; verify before assigning.
+5. **For each candidate URL: apply the litmus test.** If the page is a writeup / blog / explanation, DROP IT. Find a replacement.
+6. **(optional)** `read_skill_reference("practice", "REFERENCES.md")` for batching methodology + writeup-detection patterns.
+7. **Final turn** — emit Plan JSON.
 
 ## Ambition rule — BATCH ALL RELATED LABS
 The defining failure mode in the practice phase is "one lab per task." The user wants to BATCH all related labs into one comprehensive session so they build pattern recognition by repetition.

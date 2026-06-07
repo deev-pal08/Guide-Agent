@@ -21,8 +21,18 @@ from typing import Any
 
 from guide_agent.agent.base import BaseBrain, GuideParseError
 from guide_agent.agent.tools import (
+    BLOG_FEED_SEARCH_TOOL_DEF,
+    CODEREVIEWLAB_SEARCH_TOOL_DEF,
+    CTFSEARCH_SEARCH_TOOL_DEF,
+    CTFTIME_EVENTS_TOOL_DEF,
+    GITHUB_REPO_SEARCH_TOOL_DEF,
+    GITHUB_REPOS_BY_STARS_TOOL_DEF,
+    HACKERONE_HACKTIVITY_SEARCH_TOOL_DEF,
     NEWSLETTER_QUERY_TOOL_DEF,
+    PENTESTERLAND_SEARCH_TOOL_DEF,
+    PREFETCHED_RESOURCE_SEARCH_TOOL_DEF,
     SEARCH_CONSUMED_TOOL_DEF,
+    SITEMAP_SEARCH_TOOL_DEF,
     VERIFY_URL_TOOL_DEF,
     WEB_SEARCH_TOOL_DEF,
     Tools,
@@ -58,16 +68,120 @@ bug class '{bug_class}'. Your job: generate ONE day's plan as JSON.
 {web_search_availability}
 
 ## YOUR TOOL BUDGET (max ~6 turns, batch aggressively)
-- Turn 1: search_consumed_resources for URLs you already know exist
-- Turn 1-2: newsletter_query + web_search (batch all queries in one turn)
+- Turn 1: ALWAYS call `prefetched_resource_search(bug_class, bug_class_id)` \
+FIRST. This is an instant SQLite query over already-fetched resources \
+(Pentester Land + blog feeds + sitemaps + reddelexc archive). Pair it with \
+`search_consumed_resources` for any URLs you already know exist.
+- Turn 1-2 (LIVE FALLBACK — only if needed): if the prefetched search \
+returned too few results for the user's target_hours, OR the user context \
+contains `FRESH_FETCH=true`, fan out to live tools: newsletter_query + \
+web_search + github_repo_search + hackerone_hacktivity_search + \
+pentesterland_search + blog_feed_search + sitemap_search + ctfsearch_search \
+(batch all in one turn).
 - Turn 3: verify_url on the candidate URLs (batch all calls in one turn)
 - Turn 4 (optional): read_skill_reference if you need deeper methodology
 - Final turn: output the final Plan JSON
 
 NEVER spread the same tool across multiple turns when you could batch — wastes \
-tokens. NEVER fabricate URLs — every URL in `primary_resource_url` or `resources` \
-MUST come from web_search, \
-newsletter_query, or a hardcoded source you can name.
+tokens. NEVER skip the prefetched_resource_search call — the user has \
+already paid the fetch cost; reusing that data is free. NEVER fabricate \
+URLs — every URL in `primary_resource_url` or `resources` MUST come from \
+prefetched_resource_search, web_search, github_repo_search, \
+hackerone_hacktivity_search, pentesterland_search, blog_feed_search, \
+sitemap_search, ctfsearch_search, newsletter_query, or a hardcoded source \
+you can name.
+
+## github_repo_search — USE for GitHub-hosted hardcoded sources
+Search engines (Brave/Tavily/Exa) rarely index GitHub subdirectory READMEs. \
+When a hardcoded source is `github.com/<owner>/<repo>` (e.g. PayloadsAllTheThings, \
+crApi, Juice Shop, *-Goat repos), bare `site:` search returns only the repo \
+homepage and you miss the bug-class-specific content.
+
+WHENEVER you see a hardcoded source URL whose host is github.com, prefer calling \
+`github_repo_search(repo_url=..., bug_class=...)` over web_search for THAT URL. \
+The tool walks the repo's file tree and returns ranked paths matching the bug \
+class (top-level dirs + README.md prioritised). For example, calling it on \
+PayloadsAllTheThings with bug_class='xss' returns `XSS Injection/README.md` \
+and related files — content you'd otherwise miss completely. \
+Batch these calls with your web_search calls in the same turn.
+
+## hackerone_hacktivity_search — USE for the examples phase
+HackerOne hacktivity has 2000+ disclosed XSS reports, 500+ SSRF, etc. — but \
+Brave `site:hackerone.com/reports` only surfaces ~10 reports. The dedicated \
+tool queries HackerOne's GraphQL search directly with structured severity + \
+bounty filters, then sorts by severity DESC then bounty DESC so the \
+highest-impact paid reports come first.
+
+WHENEVER the phase is `examples` and you need disclosed real-world reports for \
+a bug class, call `hackerone_hacktivity_search(bug_class='<class>', \
+min_severity='high', min_bounty=0, limit=15)` BEFORE falling back to web_search. \
+For very common bug classes (XSS, SSRF) you can raise `min_bounty=500` to filter \
+out noise. Returns structured `[{url, title, team_handle, severity, bounty, \
+cwe, votes, ...}]` — use the `url` as the resource URL and surface severity + \
+bounty + CWE in the resource `note` field so the user knows the impact at a \
+glance. Batch with your other discovery calls in the same turn.
+
+### Drain-in-waves pattern (high-volume classes)
+1. First run: `min_severity='high', min_bounty=0, limit=20` — top tier.
+2. ALWAYS pass returned URLs through `search_consumed_resources` to drop \
+ones the user has already drained.
+3. If too many dupes vs the consumed ledger, re-run with \
+`exclude_report_ids=[<ids>]` (bare numeric IDs) to skip them server-side, OR \
+lower the bar (`min_severity='medium'`) to unlock the next tier, OR raise \
+`limit` (capped at 200).
+4. For technique classes (postmessage, prototype pollution) the universe is \
+small (~20-50 total) — drain in one or two runs, don't keep firing.
+
+## pentesterland_search — USE for the examples phase (complements H1)
+Pentester Land curates 6400+ bug-bounty writeups from Medium / personal blogs / \
+Sonar / includesecurity / hashnode / infosecwriteups — sources NOT on HackerOne. \
+The data is a structured JSON (~1100 XSS, ~280 SSRF, ~33 postMessage entries) \
+with direct external URLs, titles, authors, programs, bug tags, bounty, dates.
+
+WHENEVER the phase is `examples`, call BOTH \
+`hackerone_hacktivity_search` AND `pentesterland_search` for the same bug \
+class in your first discovery turn — they cover different universes (H1 \
+disclosed reports vs blog/Medium writeups). Default usage: \
+`pentesterland_search(bug_class='<class>', min_bounty=0, limit=15)`. \
+For high-volume classes use `min_bounty=500` to filter to paid findings. \
+Pass `exclude_urls=[<urls>]` on follow-up runs to skip consumed writeups.
+
+## blog_feed_search — USE for research-blog hardcoded sources
+Brave `site:` searches cap at ~10 results, but research blogs have far more \
+posts (Orange Tsai = 100, Embrace The Red = 224, PentesterLab = 186, \
+PortSwigger Research = 40+). When a hardcoded source has a `feed_url` \
+configured (look for it in the Sources block), prefer \
+`blog_feed_search(feed_url=..., bug_class=...)` over `site:` web_search for \
+THAT blog — it fetches the full feed and substring-matches against entry \
+title + summary, so you get every relevant post, not just the 10 Brave \
+indexed. Use '|' to OR synonyms in bug_class: \
+`'postmessage|cross-window|window.opener'`. Batch with your other discovery \
+calls in the same turn.
+
+## sitemap_search — USE for blogs with NO feed but a sitemap
+Some sites (e.g. Sonar Research Blog) have no RSS/Atom feed but expose a \
+sitemap.xml with all blog posts (538 Sonar posts vs 10 via Brave). When a \
+hardcoded source has a `sitemap_url` configured, call \
+`sitemap_search(sitemap_url=..., bug_class=..., url_prefix=<blog root>)`. \
+Match is URL-slug only (lossier than feed body matching), so use generous \
+OR synonyms: `'xss|cross-site'`, `'rce|code-execution|remote-code'`. The \
+`url_prefix` filter is critical — without it, sitemap_search returns \
+unrelated product/translated/marketing URLs alongside blog posts.
+
+### feed_url + sitemap_url both present (e.g. PortSwigger, Intigriti)
+Sources with both endpoints are fully covered by the prefetch fan-out — \
+both `blog_feed_search` and `sitemap_search` fire during population, \
+results dedup by URL. You don't need to choose; just query the DB and \
+the union of both is already there.
+
+## ctfsearch_search — USE for the examples phase (CTF complement)
+CTFsearch indexes 35,800+ CTF writeups (TryHackMe / HackTheBox / OffSec / \
+general CTF) with full-text search across title + content. CTF writeups \
+often have MORE technical depth than terse bug-bounty reports (full \
+exploitation chains, step-by-step payloads). Use ALONGSIDE \
+hackerone_hacktivity_search + pentesterland_search to cover three \
+distinct universes: H1 disclosed reports, blog writeups, and CTF \
+walkthroughs. Default: `ctfsearch_search(bug_class='<class>', limit=15)`.
 
 ## AMBITION RULE (HARD)
 The user explicitly wants ambitious depth-drilling tasks, NOT micro-tasks.
@@ -177,11 +291,15 @@ class PlannerBrain(BaseBrain):
         date: str | None = None,
         research_mode: ResearchMode | None = None,
         skill_override: str | None = None,
+        fresh_fetch: bool = False,
     ) -> Plan:
         """Generate, persist, and return a Plan for the given bug class + phase.
 
         skill_override lets the researcher reuse this loop with the 'research'
         skill loaded explicitly.
+
+        fresh_fetch=True signals the planner to bypass prefetched DB and run
+        live fetchers (--fresh CLI flag).
         """
         date = date or datetime.now(UTC).strftime("%Y-%m-%d")
         skill_name = skill_override or phase.value
@@ -207,6 +325,7 @@ class PlannerBrain(BaseBrain):
             phase=phase,
             target_hours=target_hours,
             date=date,
+            fresh_fetch=fresh_fetch,
         )
 
         plan_dict = self._run_loop(system=system, user_message=user_msg)
@@ -234,6 +353,7 @@ class PlannerBrain(BaseBrain):
         phase: Phase,
         target_hours: float,
         date: str,
+        fresh_fetch: bool = False,
     ) -> str:
         progress = self.state.get_all_phase_progress(bug_class_id)
         consumed_count = self.state.get_consumed_count(bug_class_id)
@@ -246,7 +366,8 @@ class PlannerBrain(BaseBrain):
 
         sections = [
             f"## REQUEST\nbug_class={bug_class_name}, bug_class_id={bug_class_id}, "
-            f"phase={phase.value}, target_hours={target_hours}, date={date}",
+            f"phase={phase.value}, target_hours={target_hours}, date={date}, "
+            f"FRESH_FETCH={'true' if fresh_fetch else 'false'}",
         ]
 
         # Phase progress
@@ -319,6 +440,16 @@ class PlannerBrain(BaseBrain):
             VERIFY_URL_TOOL_DEF,
             NEWSLETTER_QUERY_TOOL_DEF,
             SEARCH_CONSUMED_TOOL_DEF,
+            PREFETCHED_RESOURCE_SEARCH_TOOL_DEF,
+            GITHUB_REPO_SEARCH_TOOL_DEF,
+            GITHUB_REPOS_BY_STARS_TOOL_DEF,
+            HACKERONE_HACKTIVITY_SEARCH_TOOL_DEF,
+            PENTESTERLAND_SEARCH_TOOL_DEF,
+            CODEREVIEWLAB_SEARCH_TOOL_DEF,
+            BLOG_FEED_SEARCH_TOOL_DEF,
+            SITEMAP_SEARCH_TOOL_DEF,
+            CTFSEARCH_SEARCH_TOOL_DEF,
+            CTFTIME_EVENTS_TOOL_DEF,
             READ_SKILL_REFERENCE_TOOL_DEF,
         ]
         last_call = 0.0

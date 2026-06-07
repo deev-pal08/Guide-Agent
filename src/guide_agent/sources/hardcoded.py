@@ -52,7 +52,19 @@ def render_hardcoded_pool(
             "research from the newsletter DB and the broader web."
         )
         for src in pool:
-            lines.append(f"- {src.name} — {src.base_url}")
+            extras: list[str] = []
+            if src.feed_url:
+                extras.append(f"feed_url for blog_feed_search: {src.feed_url}")
+            if src.sitemap_url:
+                extras.append(
+                    f"sitemap_url for sitemap_search: {src.sitemap_url}",
+                )
+            if extras:
+                lines.append(
+                    f"- {src.name} — {src.base_url} ({'; '.join(extras)})",
+                )
+            else:
+                lines.append(f"- {src.name} — {src.base_url}")
 
     if deep:
         if lines:

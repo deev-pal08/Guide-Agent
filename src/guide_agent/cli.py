@@ -111,6 +111,10 @@ def cli() -> None:
     help="Target hours for the plan (default: 3.0, or prompt during confirmation)",
 )
 @click.option("--no-email", is_flag=True, help="Skip sending the plan email")
+@click.option(
+    "--fresh", "fresh_fetch", is_flag=True,
+    help="Bypass prefetched DB and force the planner to run live fetchers.",
+)
 def drill(
     bug_class: str,
     phase_flag: str | None,
@@ -119,6 +123,7 @@ def drill(
     research_mode: str | None,
     hours: float | None,
     no_email: bool,
+    fresh_fetch: bool,
 ) -> None:
     """Work on a bug class — the main entry point."""
     config, state, loader = _ctx_objects()
@@ -198,6 +203,55 @@ def drill(
         f"Firing planner..."
     )
 
+    # Auto-trigger: populate the DB for this bug class if it's empty for the
+    # user, or if --fresh was passed. Skipped for the 'research' phase (which
+    # is discovery-only and doesn't use the prefetched-resources path).
+    if phase != Phase.RESEARCH:
+        from guide_agent.agent.expansion import (
+            build_search_query,
+            ensure_expansion,
+        )
+        from guide_agent.agent.tools import Tools
+        from guide_agent.refresh import populate_if_empty
+
+        tools = Tools(config, state, loader)
+        # Pay one ~$0.0003 Haiku call (once per class lifetime) to get a
+        # synonym list — boosts recall for technique classes like postmessage
+        # / request smuggling where the literal name isn't in titles.
+        terms = ensure_expansion(config, state, loader, bc["name"])
+        expanded_query = build_search_query(terms)
+        if len(terms) > 1:
+            click.echo(
+                f"Search expansion for {bc['name']}: {len(terms)} terms "
+                f"({', '.join(terms[1:6])}{'...' if len(terms) > 6 else ''})"
+            )
+
+        did_fetch, fetch_report = populate_if_empty(
+            config=config,
+            state=state,
+            tools=tools,
+            bug_class=bc["name"],
+            bug_class_id=bc["id"],
+            phase=phase.value,
+            force=fresh_fetch,
+            expanded_query=expanded_query,
+        )
+        if did_fetch:
+            click.echo("\nPopulating local DB for this bug class:")
+            for sid, counts in fetch_report.items():
+                click.echo(
+                    f"  {sid:35s}  fetched={counts.get('fetched', 0):>4d}  "
+                    f"inserted={counts.get('inserted', 0):>4d}  "
+                    f"tagged={counts.get('tagged', 0):>4d}"
+                )
+            total = state.unread_count_for_bug_class(bc["name"], bc["id"])
+            click.echo(f"  Total unread for {bc['name']}: {total}")
+        else:
+            unread = state.unread_count_for_bug_class(bc["name"], bc["id"])
+            click.echo(
+                f"DB has {unread} unread resources for {bc['name']} — using cache.",
+            )
+
     try:
         if phase == Phase.RESEARCH:
             researcher = ResearcherBrain(config, state, loader)
@@ -206,6 +260,7 @@ def drill(
                 bug_class_name=bc["name"],
                 research_mode=mode_override or ResearchMode.GAP_ANALYSIS,
                 target_hours=target_hours,
+                fresh_fetch=fresh_fetch,
             )
         else:
             planner = PlannerBrain(config, state, loader)
@@ -215,6 +270,7 @@ def drill(
                 phase=phase,
                 target_hours=target_hours,
                 research_mode=mode_override,
+                fresh_fetch=fresh_fetch,
             )
     except Exception as e:
         logger.exception("Plan generation failed")
@@ -396,6 +452,98 @@ def process_replies(yes: bool) -> None:
 # ---------------------------------------------------------------------------
 # init — first-run wizard
 # ---------------------------------------------------------------------------
+
+
+@cli.command("populate")
+@click.argument("bug_class", required=True)
+@click.option(
+    "--phase", "phase_name",
+    type=click.Choice(["learn", "examples", "practice", "execute"]),
+    default="examples",
+    help="Which phase's hardcoded sources to fan out across (default: examples)",
+)
+def populate(bug_class: str, phase_name: str) -> None:
+    """Manually populate the prefetch DB for one bug class across all sources.
+
+    Normally this fires automatically when you run `guide drill <class>` for
+    a class with zero unread rows. Use this command to pre-warm a class
+    without firing the planner (useful for batch overnight populates).
+    """
+    from guide_agent.agent.expansion import build_search_query, ensure_expansion
+    from guide_agent.agent.tools import Tools
+    from guide_agent.refresh import populate_for_bug_class
+
+    config, state, loader = _ctx_objects()
+    bc_id = state.upsert_bug_class(bug_class)
+    bc = state.get_bug_class(bc_id)
+    assert bc is not None
+
+    terms = ensure_expansion(config, state, loader, bc["name"])
+    expanded_query = build_search_query(terms)
+    if len(terms) > 1:
+        click.echo(
+            f"Search expansion: {len(terms)} terms — "
+            f"{', '.join(terms[1:6])}{'...' if len(terms) > 6 else ''}"
+        )
+
+    click.echo(
+        f"Fanning out for {bc['name']} across {phase_name} sources..."
+    )
+    tools = Tools(config, state, loader)
+    report = populate_for_bug_class(
+        config=config, state=state, tools=tools,
+        bug_class=bc["name"], phase=phase_name,
+        expanded_query=expanded_query,
+    )
+
+    if not report:
+        click.echo("No sources matched.")
+        return
+
+    click.echo(
+        f"\n{'source':40s}  {'fetched':>8s}  {'inserted':>9s}  {'tagged':>7s}"
+    )
+    click.echo("-" * 70)
+    for sid, counts in report.items():
+        click.echo(
+            f"{sid:40s}  {counts.get('fetched', 0):>8d}  "
+            f"{counts.get('inserted', 0):>9d}  {counts.get('tagged', 0):>7d}"
+        )
+    total = state.tagged_count_for_bug_class(bc["name"])
+    unread = state.unread_count_for_bug_class(bc["name"], bc["id"])
+    click.echo(f"\nTotal tagged for {bc['name']}: {total}  (unread: {unread})")
+
+
+@cli.command("expansions")
+@click.argument("bug_class", required=True)
+@click.option("--refresh", is_flag=True, help="Force regeneration via Haiku call.")
+@click.option(
+    "--edit", "edit_terms", default=None,
+    help="Comma-separated list of terms — replaces the cached expansion.",
+)
+def expansions(bug_class: str, refresh: bool, edit_terms: str | None) -> None:
+    """Show, refresh, or override the synonym expansion for a bug class."""
+    from guide_agent.agent.expansion import ensure_expansion
+
+    config, state, loader = _ctx_objects()
+    bc_norm = bug_class.strip().lower()
+
+    if edit_terms is not None:
+        manual = [t.strip().lower() for t in edit_terms.split(",") if t.strip()]
+        if bc_norm not in manual:
+            manual.insert(0, bc_norm)
+        state.set_expansion(bc_norm, manual)
+        click.echo(f"Set expansion for {bc_norm}: {manual}")
+        return
+
+    if refresh:
+        state.delete_expansion(bc_norm)
+        click.echo(f"Cleared cached expansion for {bc_norm}.")
+
+    terms = ensure_expansion(config, state, loader, bc_norm, force=refresh)
+    click.echo(f"\nExpansion for {bc_norm} ({len(terms)} terms):")
+    for t in terms:
+        click.echo(f"  - {t}")
 
 
 @cli.command()

@@ -8,7 +8,7 @@ llm:
   conversation_model: "claude-haiku-4-5"   # Cheap propose/iterate loop
   planner_model: "claude-sonnet-4-6"        # Daily plan generation per phase
   research_model: "claude-opus-4-8"         # Research phase (gap analysis etc.)
-  max_tokens: 16384
+  max_tokens: 32768
 
 # Email — outbound briefing
 email:
@@ -51,32 +51,40 @@ sources:
   learn:
     # General web / cross-domain knowledge bases
     - name: "HackTricks"
-      base_url: "https://hacktricks.wiki/en/index.html"
+      base_url: "https://hacktricks.wiki/en/"
+      sitemap_url: "https://hacktricks.wiki/sitemap.xml"
     - name: "PortSwigger Web Security Academy"
-      base_url: "https://portswigger.net/web-security/all-topics"
+      base_url: "https://portswigger.net/web-security/"
+      sitemap_url: "https://portswigger.net/sitemap.xml"
     - name: "0xn3va Cheat Sheets"
       base_url: "https://0xn3va.gitbook.io/cheat-sheets"
     - name: "PayloadsAllTheThings"
       base_url: "https://github.com/swisskyrepo/PayloadsAllTheThings/tree/master"
     - name: "KathanP19 HowToHunt"
       base_url: "https://kathan19.gitbook.io/howtohunt"
+      sitemap_url: "https://kathan19.gitbook.io/sitemap.xml"
     - name: "MDN Web Docs"
-      base_url: "https://developer.mozilla.org/en-US/"
+      base_url: "https://developer.mozilla.org/"
+      sitemap_url: "https://developer.mozilla.org/sitemap.xml"
     - name: "OWASP Cheat Sheet Series"
       base_url: "https://cheatsheetseries.owasp.org/"
+      sitemap_url: "https://cheatsheetseries.owasp.org/sitemap.xml"
     - name: "OWASP Web Security Testing Guide"
       base_url: "https://owasp.org/www-project-web-security-testing-guide/"
     - name: "Snyk Learn"
       base_url: "https://learn.snyk.io/"
+      sitemap_url: "https://learn.snyk.io/sitemap.xml"
     - name: "OWASP API Security Project"
       base_url: "https://owasp.org/www-project-api-security/"
     - name: "Intigriti Hackademy"
       base_url: "https://www.intigriti.com/researchers/hackademy"
+      sitemap_url: "https://www.intigriti.com/sitemap.xml"
     - name: "CTF101 (NYU OSIRIS)"
       base_url: "https://ctf101.org/"
     # AI / LLM
     - name: "OWASP GenAI Security Project"
       base_url: "https://genai.owasp.org/"
+      sitemap_url: "https://genai.owasp.org/sitemap.xml"
     - name: "awesome-llm-security"
       base_url: "https://github.com/corca-ai/awesome-llm-security"
     # Mobile
@@ -127,47 +135,52 @@ sources:
     # Curated archives / indexes of real disclosed reports
     - name: "reddelexc HackerOne Reports Archive"
       base_url: "https://github.com/reddelexc/hackerone-reports/tree/master"
-    - name: "BugBountyHunting Search Engine"
-      base_url: "https://www.bugbountyhunting.com/"
-    - name: "BugBoard (rsecloud)"
-      base_url: "https://bugboard.rsecloud.com/"
     # Original-research blogs — every post is a real-world finding
     - name: "Orange Tsai's Blog"
       base_url: "https://blog.orange.tw/"
+      feed_url: "https://blog.orange.tw/atom.xml"
     - name: "Embrace The Red (wunderwuzzi)"
       base_url: "https://embracethered.com/blog/"
+      feed_url: "https://embracethered.com/blog/index.xml"
     - name: "Google Project Zero"
       base_url: "https://googleprojectzero.blogspot.com/"
+      feed_url: "https://googleprojectzero.blogspot.com/feeds/posts/default"
     - name: "Sonar Research Blog"
       base_url: "https://www.sonarsource.com/blog/"
+      sitemap_url: "https://www.sonarsource.com/sitemap.xml"
     - name: "PentesterLab Blog"
       base_url: "https://pentesterlab.com/blog/"
+      feed_url: "https://pentesterlab.com/blog/feed.xml"
     - name: "PortSwigger Research"
       base_url: "https://portswigger.net/research/"
-    # General publishing platform — broad but very high-volume of writeups
-    - name: "Medium"
-      base_url: "https://medium.com/"
+      feed_url: "https://portswigger.net/research/rss"
+      sitemap_url: "https://portswigger.net/sitemap.xml"
     # CTF writeup archive
     - name: "CTFsearch (HackMap CTF writeup index)"
       base_url: "https://ctfsearch.hackmap.win/"
+    # Bug bounty platform researcher blog — advanced exploitation guides per bug class
+    - name: "Intigriti Researchers Blog"
+      base_url: "https://www.intigriti.com/researchers/blog"
+      feed_url: "https://www.intigriti.com/researchers/blog/feed"
+      sitemap_url: "https://www.intigriti.com/sitemap.xml"
   practice:
     # === Web app security ===
     - name: "PortSwigger Web Security Academy Labs"
-      base_url: "https://portswigger.net/web-security/all-labs"
-    - name: "PentesterLab Tracks"
-      base_url: "https://pentesterlab.com/tracks"
-    - name: "OWASP Juice Shop"
-      base_url: "https://github.com/juice-shop/juice-shop"
-    - name: "Hacker101 CTF"
+      base_url: "https://portswigger.net/web-security/"
+      sitemap_url: "https://portswigger.net/sitemap.xml"
+    - name: "PentesterLab Exercises"
+      base_url: "https://pentesterlab.com/exercises/"
+      sitemap_url: "https://pentesterlab.com/sitemap.xml"
+    - name: "OWASP Juice Shop Pwning Guide"
+      base_url: "https://pwning.owasp-juice.shop/"
+      sitemap_url: "https://pwning.owasp-juice.shop/sitemap.xml"
+    - name: "Hacker101 Sessions + Videos"
+      base_url: "https://www.hacker101.com/"
+      sitemap_url: "https://www.hacker101.com/sitemap.xml"
+    - name: "Hacker101 CTF Labs"
       base_url: "https://ctf.hacker101.com/"
     - name: "Google XSS Game"
       base_url: "https://xss-game.appspot.com/"
-    - name: "Root-Me"
-      base_url: "https://www.root-me.org/"
-    - name: "HackThisSite"
-      base_url: "https://www.hackthissite.org/"
-    - name: "CTFlearn"
-      base_url: "https://ctflearn.com/"
     # === API security ===
     - name: "Damn Vulnerable GraphQL Application (DVGA)"
       base_url: "https://github.com/dolevf/Damn-Vulnerable-GraphQL-Application"
@@ -285,6 +298,8 @@ sources:
       base_url: "https://academy.hackthebox.com/catalogue"
     - name: "TryHackMe Challenges"
       base_url: "https://tryhackme.com/challenges"
+    - name: "picoCTF (CMU / CyLab)"
+      base_url: "https://picoctf.org/"
     # === DevSecOps / IaC ===
     - name: "TerraGoat (Bridgecrew)"
       base_url: "https://github.com/bridgecrewio/terragoat"
@@ -292,9 +307,6 @@ sources:
       base_url: "https://github.com/bridgecrewio/cfngoat"
     - name: "CdkGoat (Bridgecrew)"
       base_url: "https://github.com/bridgecrewio/cdkgoat"
-    # === Code review ===
-    - name: "Code Review Lab"
-      base_url: "https://www.codereviewlab.com/"
   execute:
     # === Bug bounty platforms (program directories) ===
     # The agent uses these to discover live programs accepting reports for

@@ -1,132 +1,110 @@
 ---
 name: execute
-description: Hunt for real findings on real targets. EXACTLY 3 tasks per run — Task 1 bug-bounty hunting on live programs, Task 2 OSS CVE hunting on popular open-source projects, Task 3 active CTFs / hackathons / competitions. Plus a Tools Section listing openly-available tools for the bug class. NO building, NO writing, NO reading — pure execution. Tool building and open-source contribution belong to the research phase.
+description: Hunt for real findings on real targets. EXACTLY 3 tasks per run — Task 1 live bug-bounty programs paying well, Task 2 popular open-source projects worth a CVE (popularity-first, NOT bug-class-filtered), Task 3 upcoming CTFs / hackathons / competitions. Plus a Tools Section listing openly-available tools for the current bug class. The OSS + CTF picks are AMBIENT (best targets right now), bug class only smart-prioritizes which programs / repos / events to surface first.
 ---
 
 # Execute Phase
 
 ## Mission
-The user has drained theory (learn), absorbed real-world patterns (examples), and built muscle memory through hands-on practice. Execute is where they HUNT — on live bug bounty programs, on popular open-source projects, and in active CTFs/competitions. Every output is something the user actually attacks; nothing in this phase is theoretical, instructional, or constructive.
+The user has drained theory (learn), absorbed real-world patterns (examples), and built muscle memory through hands-on practice. Execute is where they HUNT — on live bug bounty programs, on popular open-source projects, and in active CTFs/competitions.
+
+**Critical mental model:** Bug class is mostly **noise** when discovering execute targets. A bug bounty program either accepts reports or doesn't — there's no "XSS-only program". A popular OSS library is worth auditing regardless of which bug class the user just mastered. CTFs run for everyone. **So Task 2 and Task 3 are AMBIENT** — the same high-quality opportunities surface for any bug class. **Task 1 uses bug class as a SMART SIGNAL** (programs that have paid for similar bugs in the past get prioritized) but doesn't filter out unrelated programs. **Tools Section IS bug-class-specific** because the user's current mastery dictates which tools they need.
 
 ## STRICT STRUCTURE — exactly 3 tasks + 1 tools section per run
 
 Every execute plan has EXACTLY THREE tasks, in this order:
 
-### Task 1 — Bug Bounty Hunting (task_type=bug_bounty)
-3-5 distinct LIVE bug-bounty programs the user can hunt this bug class on TODAY.
-Each resource = a specific program page (not a platform homepage) with the bug class confirmed in scope.
+### Task 1 — Live Bug Bounty Programs (task_type=bug_bounty)
+3-5 distinct LIVE bug-bounty programs the user can hunt on TODAY. Bias toward programs that:
+- Pay well (recent $5k+ bounties visible on hacktivity)
+- Have broad scope (especially web + API)
+- Have recently paid for the user's current bug class (smart-prioritize, don't filter)
+- Are not yet in the user's consumed_resources ledger
 
-### Task 2 — Open Source CVE Hunting (task_type=bug_bounty)
-3-5 distinct POPULAR open-source projects the user can audit for this bug class, with realistic CVE potential.
-Each resource = a specific repo with concrete attack surface for the bug class. Popularity floor enforced (see below).
+Each resource = specific program page (not a platform homepage). Example URLs:
+- `https://hackerone.com/shopify` (specific program)
+- `https://www.bugcrowd.com/programs/<vendor>`
+- `https://www.intigriti.com/programs/<vendor>`
+- Vendor-direct programs: `https://www.microsoft.com/en-us/msrc/bounty`, `https://www.mozilla.org/en-US/security/bug-bounty/`
 
-### Task 3 — Active CTFs / Hackathons / Competitions (task_type=ctf)
-3-5 distinct LIVE OR UPCOMING events (deadline / start date within the next 30-60 days) where the bug class is likely to appear in challenges.
-Each resource = a specific event page with a date and registration/participation info.
+Use `prefetched_resource_search` first (the populate pass tagged programs surfaced by web_search). If the user has consumed many, fall back to live web_search with queries like:
+- `site:hackerone.com/<random program> bounty`
+- `vendor bug bounty paid out` (catches recent disclosed program signals)
+- `bug bounty hall of fame 2026`
 
-If any category genuinely has no good options for this bug class, output an empty `resources: []` for that task but KEEP THE TASK SHELL (so the structure is always 3 tasks). Mention in the rationale why that category is empty.
+### Task 2 — Popular OSS Projects to Audit for CVEs (task_type=bug_bounty)
+3-5 distinct POPULAR open-source projects the user can audit with realistic CVE potential. **AMBIENT — not bug-class-filtered.** The agent's job is to surface high-impact OSS targets that:
+- Have 10,000+ GitHub stars (preferred floor: 5,000+ if stack-specific niche)
+- Are actively maintained (last commit within 6 months)
+- Are widely deployed (used by major companies, top 1% downloads on their ecosystem)
+- Have HUMAN-WRITTEN code with attack surface (not just docs / configs / curated lists)
+
+Use `prefetched_resource_search` with source=`popular_oss` first (the populate pass pulled the top 50-80 OSS targets across major ecosystems via GitHub Search by stars). Then surface 3-5 best fits.
+
+**For each OSS target's `note` field, cite the popularity signal explicitly:**
+- "320k stars, primary front-end framework — `react`"
+- "180k stars, runs >40% of websites — `wordpress`"
+- "62k stars, default Node.js framework — `express`"
+
+Bug class can SMART-PRIORITIZE but not FILTER:
+- For XSS / DOM mastery → bias toward frontend libraries (React, Vue, Svelte, Next.js)
+- For SSRF / RCE → bias toward backend frameworks (Express, Django, Spring, Laravel)
+- For deserialization → Java / Ruby / Python ecosystems
+- For prototype pollution → npm packages
+
+If no bias fits, return the highest-stars projects across all languages.
+
+### Task 3 — Upcoming CTFs / Hackathons / Competitions (task_type=ctf)
+3-5 distinct LIVE OR UPCOMING events (start date within next 60 days) where the user can compete.
+
+Use `prefetched_resource_search` with source=`ctftime` first (the populate pass pulled all upcoming CTFs from CTFtime API with weight/format/restrictions metadata). Surface 3-5 best fits.
+
+**Selection criteria (AMBIENT — bug class is NOT a filter):**
+- CTFtime weight ≥ 25 (notable events) when available
+- Format: Jeopardy (individual or small-team friendly)
+- Restrictions: Open (skip students-only / corporate-only unless user qualifies)
+- Start date next 7-60 days (skip "starts in 6 months" — too speculative)
+
+Note in the `note` field: "Format: Jeopardy, Open, weight=42, starts 2026-07-15".
+
+For non-CTFtime events (hackathons, AI-red-team competitions), supplement with `web_search`:
+- `AI red team competition 2026`
+- `bug bounty hackathon 2026`
+- `BSides CTF 2026 registration`
 
 ### Tools Section (NOT a task — separate `tools_section` field on the Plan)
-5-10 openly-available tools the user can USE for hunting this bug class. These are tools to download/run, not tools to build.
-For example for postMessage: FrogPost (Chrome extension), DOM Invader (Burp), postMessage fuzzers on GitHub, browser DevTools helpers.
+5-10 openly-available tools the user can USE for hunting the **current bug class**. These are tools to download/run, not tools to build.
 
-## Popularity floor for OSS targets (Task 2)
-Every OSS project in Task 2 MUST meet AT LEAST ONE of:
-- 10,000+ GitHub stars
-- Top 1% download count on its package ecosystem (npm, PyPI, Maven, Crates.io, RubyGems, Go modules)
-- Used by a recognizable company (mentioned in major-company package.json, gemfile, requirements.txt, etc.)
-- Active maintenance: last commit within 6 months AND >1k stars
+**Use prefetched_resource_search with source="hunting_tools" first** — the populate pass ran `github_repos_by_stars` with bug-class-tuned hunting queries (`<bug_class> scanner`, `<bug_class> exploitation`, `<bug_class> fuzzer`, `<bug_class> burp extension`, `<bug_class> tool`) and tagged the results. Surface 5-10 best fits with descriptive notes (what makes each useful for THIS bug class).
 
-If a candidate doesn't meet ONE of these, drop it. A CVE in `lodash` matters; a CVE in a hobby project doesn't.
+If the DB is empty or you want fresh tool discovery, fall back to direct calls:
+- For postMessage: `github_repos_by_stars(query="postmessage exploitation", min_stars=50)` → FrogPost etc.
+- For XSS: `query="xss scanner"`, `query="xss payload"`, etc.
+- For JWT: `query="jwt cracker"`, `query="jsonwebtoken security"`
 
-For each OSS target's `note` field, cite the popularity signal explicitly (e.g. `"260k weekly npm downloads"`, `"32k stars, used by Vercel"`).
+Each tool entry needs: url + name + note (what makes it useful for THIS bug class).
 
-## CTF / hackathon / competition discovery (Task 3)
-Bias toward:
-- Specific named events with a public registration / event page
-- Deadline or event start within the next 30-60 days
-- Bug class is plausibly relevant (web bugs → web CTFs, smart contract bugs → DeFi CTFs, etc.)
-- Open to individual participants (skip invite-only or corporate-only events)
-
-Sources to search:
-- CTFtime upcoming events
-- HackTheBox Live + Upcoming CTF event pages (hardcoded pool)
-- Specific named CTFs: picoCTF, Google CTF, DEF CON CTF qualifiers, BSides CTFs, Pwn2Own, AI-red-teaming competitions
-- Public hackathon platforms (Devpost, MLH for student events) — only when bug-class-relevant
-- Bug-class-specific competitions (e.g., AI security CTFs from Lakera, Wiz, etc.)
-
-## Sources you mine — HARDCODED HUBS + DISCOVERY
-
-The execute phase has a hardcoded pool of bug-bounty platform directories and CTF event hubs. Everything else comes from live discovery.
-
-**Hardcoded hubs to mine first** (use `site:`-scoped searches against each):
-- HackerOne programs directory + Hacktivity
-- Bugcrowd / Intigriti / YesWeHack program directories
-- HackTheBox live / upcoming / past CTF event listings
-
-**Web search** for everything else:
-
-**For Task 1 — bug-bounty programs:**
-- `"<bug-class>" bug bounty program in-scope`
-- `"<bug-class>" responsible disclosure`
-- `vendor bug bounty program <bug-class>`
-- `site:hackerone.com/<program-slug>` for specific candidates
-- Cross-reference past disclosed reports — if Shopify paid $3000 for a postMessage XSS, similar SaaS programs are good targets
-
-**For Task 2 — popular OSS:**
-- `"<bug-class>" github stars:>10000`
-- `popular npm package <bug-class>`
-- `widely-used <stack> library <bug-class>`
-- `"<bug-class>" production library`
-- `top github repos <stack-relevant-to-bug-class>`
-- For each candidate, verify popularity via npm/GitHub before including
-
-**For Task 3 — CTFs / hackathons / competitions:**
-- `"<bug-class>" CTF 2026 upcoming`
-- `CTFtime upcoming <bug-class>`
-- `AI security CTF 2026`
-- `web security hackathon 2026 register`
-- `Pwn2Own 2026 schedule`
-
-**For the Tools Section:**
-- `"<bug-class>" scanner tool github`
-- `"<bug-class>" fuzzer github`
-- `"<bug-class>" Burp extension`
-- `"<bug-class>" Chrome extension security testing`
-- `awesome <bug-class>` lists (curated tool indices)
-
-## Tool loop
-
-1. **`search_consumed_resources`** — skip already-targeted programs/repos/CTFs/tools.
-2. **`newsletter_query`** + **`web_search`** in ONE turn — varied queries covering all 3 task categories + tools section.
-3. **`verify_url`** in ONE turn on every candidate URL. Drop dead URLs.
-4. **(optional)** `read_skill_reference("execute", "REFERENCES.md")` for target/OSS/CTF methodology.
-5. **Final turn** — emit Plan JSON with 3 tasks + tools_section.
-
-## Hours allocation
-
-Total target_hours splits across the 3 tasks. The user picks ONE target from each task's resource list and spends the allocated time hunting that target. So:
-- Task 1 hours = time to hunt ONE chosen program (1-2h typical)
-- Task 2 hours = time to audit ONE chosen OSS project (1-2h typical)
-- Task 3 hours = time to attempt ONE chosen CTF/event task (0.5-1h typical for the recon/registration step, the actual event happens later)
-
-Make the description explicit: "Pick ONE target from the resources below and spend [N]h hunting it. Save the others for future sessions."
+## Source pool
+- **prefetched_resource_search** → Task 1 (web_search + hardcoded_hubs), Task 2 (popular_oss), Task 3 (ctftime + web_search), Tools Section (hunting_tools) — all DB-cached from the populate pass
+- **hackerone_hacktivity_search** → smart-prioritize Task 1 (programs that recently paid for current bug class)
+- **github_repos_by_stars** → live for Tools Section fallback + Task 2 fallback if DB exhausted
+- **ctftime_events** → live for Task 3 fallback
+- **web_search** → live for Task 1 program scope hunting, hackathons not on CTFtime
 
 ## Filter rules — what to EXCLUDE
-
-- Generic homepages (hackerone.com root, bugcrowd.com root, owasp.org, github.com root) — link to a SPECIFIC program / OSS project / event page only.
+- Generic homepages (hackerone.com root, bugcrowd.com root, github.com root) — link to specific program / project / event page only.
 - Bug bounty platforms as a category (the platform isn't an opportunity, programs ARE).
 - Lab platforms (already covered in practice phase).
 - Theory reading or writeups (wrong phase).
-- Niche/low-impact OSS projects (drop if popularity floor not met).
-- Past CTFs that already ended (must be live or upcoming).
-- Programs / OSS / events the user has already targeted (check via `search_consumed_resources`).
+- Niche / low-impact OSS projects (popularity floor 5k+ stars, prefer 10k+).
+- Past CTFs that already ended.
+- Programs / OSS / events the user has already targeted (check via `search_consumed_resources` and the consumed_urls exclusion in prefetched_resource_search).
 - **Blog posts, advisories, writeups** — research phase.
 - **Tool-building tasks** — research phase. The Tools Section lists tools to USE, not to build.
 
 ## When to call read_skill_reference
-- For target identification methodology, recon angles per bug class, OSS attack-surface evaluation → `read_skill_reference("execute", "REFERENCES.md")`.
-- For CTF/event discovery methodology → load REFERENCES.md.
+- For program scope evaluation methodology, OSS attack-surface tactics → `read_skill_reference("execute", "REFERENCES.md")`.
+- For CTF / event discovery beyond CTFtime → load REFERENCES.md.
 
 ## Completion signals (when to suggest research phase)
 - User has submitted ≥3 reports / CVE-track advisories for this bug class
@@ -147,46 +125,45 @@ Strict JSON. EXACTLY 3 tasks in the order specified above. Plus the `tools_secti
   "rationale": "...",
   "tasks": [
     {
-      "title": "Hunt postMessage on live bug bounty programs — pick ONE target",
+      "title": "Hunt on live bug bounty programs — pick ONE target",
       "task_type": "bug_bounty",
       "priority": "high",
       "estimated_hours": 1.5,
       "primary_resource_url": "<first program URL>",
       "primary_resource_name": "<first program name>",
       "resources": [
-        {"url": "...", "name": "...", "note": "scope + payout signal"},
-        ...
+        {"url": "...", "name": "Shopify program", "note": "Paid $3000 for postMessage XSS in Oct 2024, broad in-scope"}
       ],
-      "description": "Pick ONE program from the resources. Spend 1.5h on recon + hunt. Deliverable: submitted report OR recon note.",
+      "description": "Pick ONE program. Spend 1.5h on recon + hunt. Deliverable: submitted report OR recon note.",
       "why": "..."
     },
     {
-      "title": "Hunt postMessage on popular OSS projects — pick ONE target",
+      "title": "Audit popular OSS for CVEs — pick ONE target",
       "task_type": "bug_bounty",
-      "primary_resource_url": "...",
+      "primary_resource_url": "https://github.com/expressjs/express",
       "resources": [
-        {"url": "...", "name": "...", "note": "260k weekly npm downloads"},
-        ...
+        {"url": "https://github.com/expressjs/express", "name": "expressjs/express", "note": "67k stars, Node default web framework, JS — fits postMessage / DOM bias"},
+        {"url": "https://github.com/vercel/next.js", "name": "vercel/next.js", "note": "133k stars, prod-deployed React framework"}
       ],
-      ...
+      "description": "Pick ONE OSS project. Spend 1h on attack surface mapping + audit. Deliverable: CVE-track advisory or security issue.",
+      "why": "..."
     },
     {
-      "title": "Register / engage with active postMessage-relevant CTFs / hackathons",
+      "title": "Register / engage with upcoming CTFs / hackathons",
       "task_type": "ctf",
       "resources": [
-        {"url": "...", "name": "...", "note": "Event date: 2026-07-15, registration open"},
-        ...
+        {"url": "https://ctftime.org/event/2913/", "name": "SSMCTF 2026", "note": "Jeopardy, Open, weight=15, starts 2026-06-07"}
       ],
-      ...
+      "description": "Pick ONE event. Register + plan participation. Deliverable: registered + calendar block.",
+      "why": "..."
     }
   ],
   "tools_section": [
     {
       "url": "https://github.com/thisis0xczar/FrogPost",
-      "name": "FrogPost — Chrome extension for postMessage security testing",
-      "note": "Live runtime interception, origin-validation analysis"
-    },
-    ...
+      "name": "FrogPost",
+      "note": "Chrome extension — live postMessage interception + origin-validation analysis"
+    }
   ]
 }
 ```

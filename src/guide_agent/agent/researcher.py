@@ -55,6 +55,7 @@ class ResearcherBrain(PlannerBrain):
         research_mode: ResearchMode,
         target_hours: float,
         date: str | None = None,
+        fresh_fetch: bool = False,
     ) -> Plan:
         """Generate a research-phase plan with the appropriate sub-mode."""
         date = date or datetime.now(UTC).strftime("%Y-%m-%d")
@@ -73,6 +74,7 @@ class ResearcherBrain(PlannerBrain):
                 date=date,
                 research_mode=research_mode,
                 skill_override="research",
+                fresh_fetch=fresh_fetch,
             )
         finally:
             self.config.llm.planner_model = original_model
@@ -92,6 +94,7 @@ class ResearcherBrain(PlannerBrain):
         phase: Phase,
         target_hours: float,
         date: str,
+        fresh_fetch: bool = False,
     ) -> str:
         base = super()._build_user_context(
             bug_class_id=bug_class_id,
@@ -99,6 +102,7 @@ class ResearcherBrain(PlannerBrain):
             phase=phase,
             target_hours=target_hours,
             date=date,
+            fresh_fetch=fresh_fetch,
         )
         # Use the in-flight research mode set by research() — NOT the latest
         # plan from the DB, which would leak the previous run's sub-mode.

@@ -156,6 +156,47 @@ SCHEMA = [
         value TEXT NOT NULL
     )
     """,
+    """
+    CREATE TABLE IF NOT EXISTS prefetched_resources (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        source TEXT NOT NULL,
+        url TEXT NOT NULL UNIQUE,
+        title TEXT NOT NULL DEFAULT '',
+        summary TEXT NOT NULL DEFAULT '',
+        metadata_json TEXT NOT NULL DEFAULT '{}',
+        fetched_at TIMESTAMP NOT NULL
+    )
+    """,
+    """
+    CREATE INDEX IF NOT EXISTS idx_prefetched_source
+        ON prefetched_resources(source)
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS resource_tags (
+        resource_id INTEGER NOT NULL REFERENCES prefetched_resources(id)
+            ON DELETE CASCADE,
+        bug_class TEXT NOT NULL,
+        tagged_at TIMESTAMP NOT NULL,
+        PRIMARY KEY (resource_id, bug_class)
+    )
+    """,
+    """
+    CREATE INDEX IF NOT EXISTS idx_resource_tags_class
+        ON resource_tags(bug_class)
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS bug_class_tag_scans (
+        bug_class TEXT PRIMARY KEY,
+        last_scanned_at TIMESTAMP NOT NULL
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS bug_class_expansions (
+        bug_class TEXT PRIMARY KEY,
+        terms_json TEXT NOT NULL,
+        expanded_at TIMESTAMP NOT NULL
+    )
+    """,
 ]
 
 
@@ -635,3 +676,375 @@ class StateStore:
             (key, value),
         )
         self._conn.commit()
+
+    # ------------------------------------------------------------------
+    # Prefetched resources + lazy bug-class tagging
+    # ------------------------------------------------------------------
+
+    def bulk_upsert_prefetched(
+        self,
+        source: str,
+        rows: list[dict[str, Any]],
+    ) -> dict[str, int]:
+        """Insert/update prefetched resources for a source.
+
+        Each row needs: url. Optional: title, summary, metadata (dict).
+        Returns {"inserted": N, "updated": N, "total": N}.
+
+        When a URL is updated, all its tags are deleted so the next query
+        for that bug class will re-scan and re-tag.
+        """
+        inserted = 0
+        updated = 0
+        for r in rows:
+            url = (r.get("url") or "").strip()
+            if not url:
+                continue
+            title = (r.get("title") or "").strip()
+            summary = (r.get("summary") or "").strip()
+            metadata = r.get("metadata") or {}
+            now = _now()
+
+            existing = self._conn.execute(
+                "SELECT id FROM prefetched_resources WHERE url = ?", (url,),
+            ).fetchone()
+            if existing:
+                rid = int(existing["id"])
+                self._conn.execute(
+                    """UPDATE prefetched_resources
+                       SET source = ?, title = ?, summary = ?,
+                           metadata_json = ?, fetched_at = ?
+                       WHERE id = ?""",
+                    (source, title, summary, json.dumps(metadata), now, rid),
+                )
+                # Clear tags so next query re-scans against new title/summary
+                self._conn.execute(
+                    "DELETE FROM resource_tags WHERE resource_id = ?", (rid,),
+                )
+                updated += 1
+            else:
+                self._conn.execute(
+                    """INSERT INTO prefetched_resources
+                       (source, url, title, summary, metadata_json, fetched_at)
+                       VALUES (?, ?, ?, ?, ?, ?)""",
+                    (source, url, title, summary, json.dumps(metadata), now),
+                )
+                inserted += 1
+        # When any new rows were added, invalidate the per-class scan
+        # markers so the next query re-scans (the new rows haven't been
+        # tagged yet). Same for updates that cleared tags.
+        if inserted or updated:
+            self._conn.execute("DELETE FROM bug_class_tag_scans")
+        self._conn.commit()
+        return {
+            "inserted": inserted,
+            "updated": updated,
+            "total": inserted + updated,
+        }
+
+    def get_prefetched_count(self, source: str | None = None) -> int:
+        if source is None:
+            row = self._conn.execute(
+                "SELECT COUNT(*) AS c FROM prefetched_resources",
+            ).fetchone()
+        else:
+            row = self._conn.execute(
+                "SELECT COUNT(*) AS c FROM prefetched_resources WHERE source = ?",
+                (source,),
+            ).fetchone()
+        return int(row["c"]) if row else 0
+
+    def _ensure_bug_class_tagged(self, bug_class: str) -> None:
+        """First call for a bug class scans all prefetched rows + writes tags.
+
+        Subsequent calls are no-ops until the scan marker is cleared by a
+        refresh (`bulk_upsert_prefetched` wipes it when anything changes).
+        """
+        bc_norm = bug_class.strip().lower()
+        if not bc_norm:
+            return
+
+        already = self._conn.execute(
+            "SELECT last_scanned_at FROM bug_class_tag_scans WHERE bug_class = ?",
+            (bc_norm,),
+        ).fetchone()
+        if already:
+            return
+
+        # Support '|'-separated synonyms — tag a resource if ANY needle matches.
+        needles = [n.strip() for n in bc_norm.split("|") if n.strip()]
+        if not needles:
+            return
+
+        # Build the WHERE clause: OR of LOWER(title || summary) LIKE %needle%
+        where_clauses = []
+        params: list[Any] = []
+        for needle in needles:
+            where_clauses.append(
+                "(LOWER(title) LIKE ? OR LOWER(summary) LIKE ?)",
+            )
+            like = f"%{needle}%"
+            params.extend([like, like])
+
+        sql = (
+            "SELECT id FROM prefetched_resources WHERE "
+            + " OR ".join(where_clauses)
+        )
+        matched = self._conn.execute(sql, params).fetchall()
+        now = _now()
+        for row in matched:
+            self._conn.execute(
+                """INSERT OR IGNORE INTO resource_tags
+                   (resource_id, bug_class, tagged_at) VALUES (?, ?, ?)""",
+                (int(row["id"]), bc_norm, now),
+            )
+        self._conn.execute(
+            """INSERT OR REPLACE INTO bug_class_tag_scans
+               (bug_class, last_scanned_at) VALUES (?, ?)""",
+            (bc_norm, now),
+        )
+        self._conn.commit()
+
+    def query_prefetched(
+        self,
+        bug_class: str,
+        bug_class_id: int | None = None,
+        source: str | None = None,
+        exclude_urls: list[str] | None = None,
+        limit: int = 25,
+    ) -> dict[str, Any]:
+        """Return prefetched resources tagged for this bug class.
+
+        Resources are tagged with the bug class at INSERT time (by
+        add_resources_for_bug_class), so this is a pure indexed JOIN —
+        no scanning, no lazy tagging.
+
+        Excludes URLs already in `consumed_resources` for the given
+        bug_class_id (if provided).
+        """
+        bc_norm = bug_class.strip().lower()
+        if not bc_norm:
+            return {"error": "bug_class is required"}
+
+        limit = min(max(1, int(limit)), 200)
+        exclude_set: set[str] = set()
+        if exclude_urls:
+            exclude_set = {str(u).strip() for u in exclude_urls if str(u).strip()}
+        if bug_class_id is not None:
+            exclude_set |= self.get_consumed_urls(bug_class_id)
+
+        params: list[Any] = [bc_norm]
+        sql = (
+            "SELECT r.id, r.source, r.url, r.title, r.summary, "
+            "r.metadata_json, r.fetched_at "
+            "FROM prefetched_resources r "
+            "JOIN resource_tags t ON t.resource_id = r.id "
+            "WHERE t.bug_class = ? "
+        )
+        if source:
+            sql += "AND r.source = ? "
+            params.append(source)
+        sql += "ORDER BY r.fetched_at DESC"
+
+        rows = self._conn.execute(sql, params).fetchall()
+        total_tagged = len(rows)
+        excluded = 0
+        results: list[dict[str, Any]] = []
+        for row in rows:
+            if row["url"] in exclude_set:
+                excluded += 1
+                continue
+            try:
+                metadata = json.loads(row["metadata_json"] or "{}")
+            except json.JSONDecodeError:
+                metadata = {}
+            results.append({
+                "url": row["url"],
+                "title": row["title"],
+                "summary": row["summary"],
+                "source": row["source"],
+                "fetched_at": row["fetched_at"],
+                "metadata": metadata,
+            })
+            if len(results) >= limit:
+                break
+
+        return {
+            "bug_class": bc_norm,
+            "source_filter": source,
+            "total_tagged": total_tagged,
+            "excluded_count": excluded,
+            "returned_count": len(results),
+            "results": results,
+        }
+
+    # ------------------------------------------------------------------
+    # Per-class scoped resource ingest (the new model)
+    # ------------------------------------------------------------------
+
+    def add_resources_for_bug_class(
+        self,
+        source: str,
+        bug_class: str,
+        rows: list[dict[str, Any]],
+    ) -> dict[str, int]:
+        """Insert resources AND tag each one with the given bug class.
+
+        This is the primary write path for per-class fan-out fetches.
+        Resources are NOT scanned across other bug classes — the tag is
+        applied because the caller said "I fetched these specifically
+        for bug_class X".
+
+        Idempotent: re-running with the same rows is a no-op (UNIQUE
+        on url + UNIQUE on resource_tags).
+        """
+        bc_norm = bug_class.strip().lower()
+        if not bc_norm:
+            return {"inserted": 0, "tagged": 0, "skipped": 0}
+
+        inserted = 0
+        tagged = 0
+        skipped = 0
+        now = _now()
+
+        for r in rows:
+            url = (r.get("url") or "").strip()
+            if not url:
+                skipped += 1
+                continue
+            title = (r.get("title") or "").strip()
+            summary = (r.get("summary") or "").strip()
+            metadata = r.get("metadata") or {}
+
+            existing = self._conn.execute(
+                "SELECT id FROM prefetched_resources WHERE url = ?", (url,),
+            ).fetchone()
+            if existing:
+                rid = int(existing["id"])
+                # Update metadata if title/summary improved (don't blast existing)
+                if title or summary:
+                    self._conn.execute(
+                        """UPDATE prefetched_resources
+                           SET title = COALESCE(NULLIF(?, ''), title),
+                               summary = COALESCE(NULLIF(?, ''), summary),
+                               metadata_json = ?,
+                               fetched_at = ?
+                           WHERE id = ?""",
+                        (title, summary, json.dumps(metadata), now, rid),
+                    )
+            else:
+                cur = self._conn.execute(
+                    """INSERT INTO prefetched_resources
+                       (source, url, title, summary, metadata_json, fetched_at)
+                       VALUES (?, ?, ?, ?, ?, ?)""",
+                    (source, url, title, summary, json.dumps(metadata), now),
+                )
+                rid = int(cur.lastrowid or 0)
+                inserted += 1
+
+            # Tag with bug class — ignore if already tagged
+            cur = self._conn.execute(
+                """INSERT OR IGNORE INTO resource_tags
+                   (resource_id, bug_class, tagged_at) VALUES (?, ?, ?)""",
+                (rid, bc_norm, now),
+            )
+            if cur.rowcount > 0:
+                tagged += 1
+
+        self._conn.commit()
+        return {
+            "inserted": inserted,
+            "tagged": tagged,
+            "skipped": skipped,
+            "total": len(rows),
+        }
+
+    def unread_count_for_bug_class(
+        self,
+        bug_class: str,
+        bug_class_id: int,
+    ) -> int:
+        """Count tagged resources NOT in consumed_resources for this class."""
+        bc_norm = bug_class.strip().lower()
+        if not bc_norm:
+            return 0
+        row = self._conn.execute(
+            """SELECT COUNT(*) AS c
+               FROM prefetched_resources r
+               JOIN resource_tags t ON t.resource_id = r.id
+               WHERE t.bug_class = ?
+                 AND r.url NOT IN (
+                     SELECT url FROM consumed_resources WHERE bug_class_id = ?
+                 )""",
+            (bc_norm, bug_class_id),
+        ).fetchone()
+        return int(row["c"]) if row else 0
+
+    def tagged_count_for_bug_class(self, bug_class: str) -> int:
+        """Total resources tagged for this class (read + unread)."""
+        bc_norm = bug_class.strip().lower()
+        if not bc_norm:
+            return 0
+        row = self._conn.execute(
+            "SELECT COUNT(*) AS c FROM resource_tags WHERE bug_class = ?",
+            (bc_norm,),
+        ).fetchone()
+        return int(row["c"]) if row else 0
+
+    # ------------------------------------------------------------------
+    # Bug-class expansion cache (Lever 3 — LLM-generated synonym set)
+    # ------------------------------------------------------------------
+
+    def get_expansion(self, bug_class: str) -> list[str] | None:
+        """Fetch the cached synonym list for this bug class, or None."""
+        bc_norm = bug_class.strip().lower()
+        if not bc_norm:
+            return None
+        row = self._conn.execute(
+            "SELECT terms_json FROM bug_class_expansions WHERE bug_class = ?",
+            (bc_norm,),
+        ).fetchone()
+        if not row:
+            return None
+        try:
+            terms = json.loads(row["terms_json"])
+            return terms if isinstance(terms, list) else None
+        except json.JSONDecodeError:
+            return None
+
+    def set_expansion(self, bug_class: str, terms: list[str]) -> None:
+        bc_norm = bug_class.strip().lower()
+        if not bc_norm:
+            return
+        # Dedupe (case-insensitive), keep first-seen ordering, then ensure
+        # the canonical class name is first regardless of input order.
+        seen: set[str] = set()
+        ordered: list[str] = []
+        for t in terms:
+            if not isinstance(t, str):
+                continue
+            tn = t.strip().lower()
+            if not tn or tn in seen:
+                continue
+            seen.add(tn)
+            ordered.append(tn)
+        if bc_norm in ordered:
+            ordered.remove(bc_norm)
+        ordered.insert(0, bc_norm)
+        self._conn.execute(
+            """INSERT OR REPLACE INTO bug_class_expansions
+               (bug_class, terms_json, expanded_at) VALUES (?, ?, ?)""",
+            (bc_norm, json.dumps(ordered), _now()),
+        )
+        self._conn.commit()
+
+    def delete_expansion(self, bug_class: str) -> None:
+        bc_norm = bug_class.strip().lower()
+        if not bc_norm:
+            return
+        self._conn.execute(
+            "DELETE FROM bug_class_expansions WHERE bug_class = ?", (bc_norm,),
+        )
+        self._conn.commit()
+
+

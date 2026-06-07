@@ -34,11 +34,12 @@ This phase is **theory only**. No labs. No CTFs. No real-world reports (those ar
 
 ## Tool loop
 
-1. **`search_consumed_resources`** — pass any URLs you already know exist for this bug class to avoid repeats.
-2. **`newsletter_query`** + **`web_search`** in ONE turn (batch all queries together). Generate 3-5 varied queries that surface different facets of the bug class — e.g., for postMessage: `["postMessage origin validation theory", "postMessage HTML spec MDN", "OWASP postMessage cheat sheet", "HackTricks postMessage"]`.
-3. **`verify_url`** in ONE turn on every candidate URL. Use the returned `page_title` as the resource_name. Drop anything that fails to load or 404s.
-4. **(optional)** `read_skill_reference("learn", "REFERENCES.md")` if you need the methodology depth in REFERENCES.md.
-5. **Final turn** — emit Plan JSON.
+1. **`prefetched_resource_search(bug_class, bug_class_id)` — ALWAYS FIRST.** The CLI runs a per-bug-class fan-out before invoking the planner, so the DB already contains learn-phase resources tagged for this bug class (theory pages from HackTricks / PortSwigger / OWASP / MDN sitemaps + cheatsheet feeds + curated github docs). Query the DB first; only fall back to live tools if returned_count is low for `target_hours`, OR the user context contains `FRESH_FETCH=true`.
+2. **`search_consumed_resources`** — pass any DB URLs to skip ones the user has already drained.
+3. **Live fallback (only if DB sparse OR FRESH_FETCH=true)** — batch in one turn: `newsletter_query` + `web_search` + `sitemap_search` (for sources with `sitemap_url`) + `blog_feed_search` (for sources with `feed_url`) + `github_repo_search` (for github sources). Generate 3-5 varied web queries that surface different facets: e.g., for postMessage `["postMessage origin validation theory", "postMessage HTML spec MDN", "OWASP postMessage cheat sheet", "HackTricks postMessage"]`.
+4. **`verify_url`** in ONE turn on every candidate URL. Use the returned `page_title` as the resource_name. Drop anything that 404s.
+5. **(optional)** `read_skill_reference("learn", "REFERENCES.md")` if you need the methodology depth.
+6. **Final turn** — emit Plan JSON.
 
 ## Ambition rule (HARD)
 NEVER assign a single short resource as its own task. Single tutorials, single MDN pages, single cheat sheet sections — all get BATCHED into one comprehensive depth-drilling task.

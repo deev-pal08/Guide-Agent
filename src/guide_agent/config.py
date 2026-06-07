@@ -15,7 +15,7 @@ class LLMConfig(BaseModel):
     conversation_model: str = "claude-haiku-4-5"
     planner_model: str = "claude-sonnet-4-6"
     research_model: str = "claude-opus-4-8"
-    max_tokens: int = 16384
+    max_tokens: int = 32768
     api_key_env: str = "ANTHROPIC_API_KEY"
 
     @property
@@ -87,6 +87,8 @@ class SourceConfig(BaseModel):
 
     name: str
     base_url: str
+    feed_url: str | None = None
+    sitemap_url: str | None = None
 
 
 class SourcesConfig(BaseModel):
@@ -115,6 +117,11 @@ class SourcesConfig(BaseModel):
         on bug_class — normalises to lowercase to match BugClass.name storage."""
         phase_map = self.deep_urls.get(phase, {})
         return list(phase_map.get(bug_class.lower(), []))
+
+    def iter_all(self) -> list[list[SourceConfig]]:
+        """Yield every phase's source list — used by the refresh orchestrator
+        which doesn't care about phase boundaries."""
+        return [self.learn, self.examples, self.practice, self.execute]
 
 
 class AppConfig(BaseModel):

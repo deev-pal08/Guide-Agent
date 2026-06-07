@@ -30,11 +30,12 @@ Same as the learn phase — bug class, target hours, consumed resources, mastere
 
 ## Tool loop
 
-1. **`search_consumed_resources`** — drop already-read URLs.
-2. **`newsletter_query`** FIRST (more curated, cheaper than web) + **`web_search`** for gaps, BOTH batched into ONE turn. Vary the queries by sub-area: e.g., for postMessage: `["postMessage hackerone disclosed", "postMessage CVE writeup origin bypass", "postMessage iframe sandbox bypass real world", "postMessage data leak production"]`.
-3. **`verify_url`** in ONE turn on every candidate.
-4. **(optional)** `read_skill_reference("examples", "REFERENCES.md")` for methodology depth.
-5. **Final turn** — emit Plan JSON.
+1. **`prefetched_resource_search(bug_class, bug_class_id)` — ALWAYS FIRST.** The CLI fan-out runs BEFORE the planner and tags the DB with examples-phase resources from `hacktivity` (real disclosed reports w/ severity + bounty), `pentesterland` (6.4k structured writeups), `ctfsearch` (35k CTF walkthroughs), `codereviewlab` (205 source-review challenges), `sitemap:<blog>` / `feed:<blog>` (every research blog with a feed or sitemap configured), and bug-class-tuned `web_search`. Query the DB first; for high-volume classes like XSS expect 3000+ tagged URLs.
+2. **`search_consumed_resources`** — pass any URLs to drop ones the user has already drained.
+3. **Live fallback (ONLY if DB sparse OR FRESH_FETCH=true)** — batch in one turn: `hackerone_hacktivity_search(bug_class, min_severity="high", min_bounty=500)` + `pentesterland_search(bug_class)` + `ctfsearch_search(bug_class)` + `codereviewlab_search(bug_class)` + `blog_feed_search` + `sitemap_search` + targeted `web_search` queries. Vary the web queries by sub-area: e.g., for postMessage: `["postMessage hackerone disclosed", "postMessage CVE writeup origin bypass", "postMessage iframe sandbox bypass real world", "postMessage data leak production"]`.
+4. **`verify_url`** in ONE turn on every candidate.
+5. **(optional)** `read_skill_reference("examples", "REFERENCES.md")` for methodology depth.
+6. **Final turn** — emit Plan JSON.
 
 ## Ambition rule — VOLUME is the point in examples phase
 The user wants DOZENS of reports per topic. ONE task = "read 15-20 reports on a single sub-area in one sitting and extract patterns" — not "read one report at a time."
