@@ -154,3 +154,56 @@ class NewsletterReader:
                     seen.add(url)
                     out.append(art)
         return out
+
+    # ------------------------------------------------------------------
+    # Tagged-article lookup (joins seen_articles with article_tags)
+    #
+    # The newsletter agent tags surviving articles with a bug_class
+    # whenever a `--topic` digest runs. We read those tags via the JOIN
+    # so guide-agent's prefetch fan-out can pull pre-tagged newsletter
+    # content without re-running keyword matching.
+    # ------------------------------------------------------------------
+
+    def get_tagged_articles(
+        self,
+        bug_class: str,
+        limit: int = 200,
+    ) -> list[dict[str, Any]]:
+        """Return articles tagged with this bug class.
+
+        Newest-first. Returns dicts with url/title/source_id/first_seen/
+        tagged_at/tag_source. Returns empty list if the article_tags table
+        doesn't exist yet (newsletter-agent on an older schema).
+        """
+        if not self._conn:
+            return []
+        bc = (bug_class or "").strip().lower()
+        if not bc:
+            return []
+        try:
+            rows = self._conn.execute(
+                """SELECT sa.url, sa.title, sa.source_id, sa.first_seen,
+                          t.tagged_at, t.source AS tag_source
+                   FROM seen_articles sa
+                   JOIN article_tags t ON t.article_url = sa.url
+                   WHERE t.bug_class = ?
+                   ORDER BY t.tagged_at DESC
+                   LIMIT ?""",
+                (bc, limit),
+            ).fetchall()
+        except sqlite3.OperationalError as e:
+            # article_tags doesn't exist yet — newsletter agent is on the
+            # pre-tagging schema. Fall back silently to empty list.
+            logger.debug("article_tags table missing: %s", e)
+            return []
+        return [
+            {
+                "url": r["url"],
+                "title": r["title"] or "",
+                "source_id": r["source_id"] or "",
+                "first_seen": r["first_seen"] or "",
+                "tagged_at": r["tagged_at"] or "",
+                "tag_source": r["tag_source"] or "topic_digest",
+            }
+            for r in rows
+        ]

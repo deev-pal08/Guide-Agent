@@ -297,6 +297,55 @@ _GITHUB_DOC_EXTENSIONS = (
 )
 
 
+def fetch_newsletter_for_class(
+    config: AppConfig, bug_class: str, limit: int = 200,
+) -> list[dict[str, Any]]:
+    """Read pre-tagged articles from the newsletter agent's DB.
+
+    Newsletter-agent runs with `--topic <bug_class>` tag every surviving
+    article in its `article_tags` table. We JOIN that with seen_articles
+    and surface the result. Read-only — guide-agent never writes to
+    newsletter's DB. Returns empty list if newsletter integration is
+    disabled or the article_tags table doesn't exist yet.
+    """
+    if not config.newsletter.enabled or not config.newsletter.project_dir:
+        return []
+    from guide_agent.sources.newsletter import NewsletterReader
+
+    try:
+        reader = NewsletterReader(config.newsletter.project_dir)
+    except FileNotFoundError as e:
+        logger.warning("Newsletter DB not found: %s", e)
+        return []
+    if not reader.is_available():
+        return []
+
+    try:
+        rows = reader.get_tagged_articles(bug_class, limit=limit)
+    finally:
+        reader.close()
+
+    out: list[dict[str, Any]] = []
+    for r in rows:
+        if not r.get("url"):
+            continue
+        out.append({
+            "url": r["url"],
+            "title": r.get("title") or "",
+            "summary": (
+                f"newsletter_source={r.get('source_id') or '-'} "
+                f"first_seen={r.get('first_seen') or '-'}"
+            ),
+            "metadata": {
+                "newsletter_source_id": r.get("source_id"),
+                "newsletter_first_seen": r.get("first_seen"),
+                "newsletter_tagged_at": r.get("tagged_at"),
+                "tag_source": r.get("tag_source"),
+            },
+        })
+    return out
+
+
 def fetch_web_search_for_class(
     tools: Tools, queries: list[str],
 ) -> list[dict[str, Any]]:
@@ -546,6 +595,11 @@ def populate_for_bug_class(
         _persist("ctfsearch", fetch_ctfsearch_for_class(tools, terms))
     if flags.get("codereviewlab"):
         _persist("codereviewlab", fetch_codereviewlab_for_class(tools, terms))
+    if flags.get("newsletter"):
+        _persist(
+            "newsletter",
+            fetch_newsletter_for_class(config, bug_class),
+        )
 
     # ------------------------------------------------------------------
     # Per-source feeds + sitemaps from this phase's hardcoded pool
@@ -668,10 +722,12 @@ def populate_for_bug_class(
 _PHASE_SOURCE_FLAGS: dict[str, dict[str, bool]] = {
     "learn": {
         # Theory phase — skip writeups, use cheatsheets / docs / web search.
+        # Newsletter on: research papers + methodology posts surface here.
         "hacktivity": False,
         "pentesterland": False,
         "ctfsearch": False,
         "codereviewlab": False,
+        "newsletter": True,
         "github_repos": True,
         "web_search": True,
     },
@@ -679,21 +735,26 @@ _PHASE_SOURCE_FLAGS: dict[str, dict[str, bool]] = {
         # Writeups + disclosed reports — everything on.
         # codereviewlab challenges have exploit + mitigation explanations
         # that double as solved examples, so include them here too.
+        # Newsletter on: real attack techniques + research papers are the
+        # bulk of newsletter content for examples phase.
         "hacktivity": True,
         "pentesterland": True,
         "ctfsearch": True,
         "codereviewlab": True,
+        "newsletter": True,
         "github_repos": True,
         "web_search": True,
     },
     "practice": {
         # Labs + CTF challenges — CTFsearch (CTF walkthroughs are pseudo-labs)
         # plus codereviewlab (source-code-review training) plus github
-        # vulnerable apps + targeted web search.
+        # vulnerable apps + targeted web search. No newsletter — articles
+        # are read-content not do-content.
         "hacktivity": False,
         "pentesterland": False,
         "ctfsearch": True,
         "codereviewlab": True,
+        "newsletter": False,
         "github_repos": True,
         "web_search": True,
     },
@@ -708,6 +769,7 @@ _PHASE_SOURCE_FLAGS: dict[str, dict[str, bool]] = {
         "pentesterland": False,
         "ctfsearch": False,
         "codereviewlab": False,
+        "newsletter": False,
         "github_repos": False,
         "web_search": True,
     },

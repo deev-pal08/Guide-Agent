@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -522,3 +522,55 @@ def test_other_phases_do_not_fire_ctftime_or_popular_oss(config, state):
         )
         tools.ctftime_events.assert_not_called()
         tools.github_repos_by_stars.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# Newsletter adapter (cross-agent integration)
+# ---------------------------------------------------------------------------
+
+
+def test_newsletter_fires_for_learn_and_examples(config, state):
+    """Newsletter adapter is on for learn + examples, off for others."""
+    config.newsletter.enabled = True
+    config.newsletter.project_dir = "/tmp/fake_newsletter"
+
+    fetched = {"called": []}
+
+    def fake_fetch(config, bug_class, limit=200):
+        fetched["called"].append(bug_class)
+        return [{"url": f"https://nl/{bug_class}/1", "title": "T",
+                 "summary": "", "metadata": {}}]
+
+    with patch.object(refresh_mod, "fetch_newsletter_for_class", side_effect=fake_fetch):
+        for phase in ("learn", "examples"):
+            fetched["called"].clear()
+            tools = _mock_tools()
+            refresh_mod.populate_for_bug_class(
+                config, state, tools, bug_class="xss", phase=phase,
+            )
+            assert "xss" in fetched["called"], f"newsletter not called for {phase}"
+
+        for phase in ("practice", "execute"):
+            fetched["called"].clear()
+            tools = _mock_tools()
+            refresh_mod.populate_for_bug_class(
+                config, state, tools, bug_class="xss", phase=phase,
+            )
+            assert "xss" not in fetched["called"], (
+                f"newsletter should NOT fire for {phase}"
+            )
+
+
+def test_newsletter_adapter_returns_empty_when_disabled(config):
+    """Adapter is silent when newsletter integration is off."""
+    config.newsletter.enabled = False
+    rows = refresh_mod.fetch_newsletter_for_class(config, "xss")
+    assert rows == []
+
+
+def test_newsletter_adapter_returns_empty_when_db_missing(config):
+    """Adapter is silent if the DB file doesn't exist."""
+    config.newsletter.enabled = True
+    config.newsletter.project_dir = "/nonexistent/path/no/way"
+    rows = refresh_mod.fetch_newsletter_for_class(config, "xss")
+    assert rows == []
